@@ -1,6 +1,6 @@
 {
   "id": "obsidian-things3",
-  "name": "Things 3 Sync",
+  "name": "obs-2-things",
   "version": "0.1.0",
   "minAppVersion": "1.0.0",
   "description": "sync open tasks from the current note to things 3 inbox",
