@@ -1,17 +1,17 @@
 import { App, Notice, Plugin, PluginSettingTab, Setting, TFile } from "obsidian";
 
 // synced settings -- stored in data.json and synced via obsidian sync
-interface Things3SyncSettings {
-  tag: string;
+interface Obs2ThingsSettings {
+  tags: string[];
 }
 
-const DEFAULT_SETTINGS: Things3SyncSettings = {
-  tag: "obsidian",
+const DEFAULT_SETTINGS: Obs2ThingsSettings = {
+  tags: ["obsidian"],
 };
 
 // auth token lives in localStorage, not synced -- things 3 generates a unique
 // token per device in settings -> general -> enable things URLs
-const AUTH_TOKEN_STORAGE_KEY = "things3-sync-plugin-auth-token";
+const AUTH_TOKEN_STORAGE_KEY = "obs2things-plugin-auth-token";
 
 interface TaskItem {
   lineIndex: number;
@@ -19,19 +19,19 @@ interface TaskItem {
   text: string;
 }
 
-export default class Things3SyncPlugin extends Plugin {
-  settings: Things3SyncSettings;
+export default class Obs2ThingsPlugin extends Plugin {
+  settings: Obs2ThingsSettings;
 
   async onload() {
     await this.loadSettings();
 
     this.addCommand({
-      id: "sync-tasks-to-things3",
-      name: "Sync open tasks to Things 3",
-      callback: () => this.syncTasksToThings(),
+      id: "send-tasks-to-things3",
+      name: "Send open tasks to Things 3",
+      callback: () => this.sendTasksToThings(),
     });
 
-    this.addSettingTab(new Things3SyncSettingTab(this.app, this));
+    this.addSettingTab(new Obs2ThingsSettingTab(this.app, this));
   }
 
   onunload() {}
@@ -52,7 +52,7 @@ export default class Things3SyncPlugin extends Plugin {
     localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
   }
 
-  async syncTasksToThings(): Promise<void> {
+  async sendTasksToThings(): Promise<void> {
     const file = this.app.workspace.getActiveFile();
     if (!file) {
       new Notice("no active note open.");
@@ -62,7 +62,7 @@ export default class Things3SyncPlugin extends Plugin {
     const authToken = this.getAuthToken();
     if (!authToken) {
       new Notice(
-        "things 3 auth token not set. add it in settings -> things 3 sync."
+        "things 3 auth token not set. add it in settings -> obs-2-things."
       );
       return;
     }
@@ -72,7 +72,7 @@ export default class Things3SyncPlugin extends Plugin {
       content = await this.app.vault.read(file);
     } catch (e) {
       new Notice("failed to read note content.");
-      console.error("[things3-sync] vault.read error:", e);
+      console.error("[obs2things] vault.read error:", e);
       return;
     }
 
@@ -95,7 +95,7 @@ export default class Things3SyncPlugin extends Plugin {
       new Notice(
         "tasks sent to things 3, but failed to update note. check console for details."
       );
-      console.error("[things3-sync] vault.modify error:", e);
+      console.error("[obs2things] vault.modify error:", e);
       return;
     }
 
@@ -126,12 +126,14 @@ export default class Things3SyncPlugin extends Plugin {
     const today = new Date().toISOString().split("T")[0];
     const notes = `source: ${obsidianLink}\nadded: ${today}`;
 
+    const tags = this.settings.tags.filter((t) => t.length > 0);
+
     const todos = tasks.map((task) => ({
       type: "to-do",
       attributes: {
         title: task.text,
         notes: notes,
-        ...(this.settings.tag ? { tags: [this.settings.tag] } : {}),
+        ...(tags.length > 0 ? { tags } : {}),
       },
     }));
 
@@ -160,10 +162,10 @@ export default class Things3SyncPlugin extends Plugin {
   }
 }
 
-class Things3SyncSettingTab extends PluginSettingTab {
-  plugin: Things3SyncPlugin;
+class Obs2ThingsSettingTab extends PluginSettingTab {
+  plugin: Obs2ThingsPlugin;
 
-  constructor(app: App, plugin: Things3SyncPlugin) {
+  constructor(app: App, plugin: Obs2ThingsPlugin) {
     super(app, plugin);
     this.plugin = plugin;
   }
@@ -172,7 +174,7 @@ class Things3SyncSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
-    containerEl.createEl("h2", { text: "things 3 sync settings" });
+    containerEl.createEl("h2", { text: "obs-2-things settings" });
 
     containerEl.createEl("h3", { text: "per-device settings (not synced)" });
 
@@ -195,18 +197,21 @@ class Things3SyncSettingTab extends PluginSettingTab {
     containerEl.createEl("h3", { text: "synced settings" });
 
     new Setting(containerEl)
-      .setName("tag")
+      .setName("tags")
       .setDesc(
-        "tag to apply to all todos created in things 3. the tag must already " +
-          "exist in things 3. leave empty to add no tag. this setting syncs " +
-          "across devices via obsidian sync."
+        "comma-separated list of tags to apply to all todos created in things 3. " +
+          "each tag must already exist in things 3. leave empty to add no tags. " +
+          "this setting syncs across devices via obsidian sync."
       )
       .addText((text) =>
         text
-          .setPlaceholder("obsidian")
-          .setValue(this.plugin.settings.tag)
+          .setPlaceholder("obsidian, work")
+          .setValue(this.plugin.settings.tags.join(", "))
           .onChange(async (value) => {
-            this.plugin.settings.tag = value.trim();
+            this.plugin.settings.tags = value
+              .split(",")
+              .map((t) => t.trim())
+              .filter((t) => t.length > 0);
             await this.plugin.saveSettings();
           })
       );
