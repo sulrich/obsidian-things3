@@ -1,0 +1,214 @@
+import { App, Notice, Plugin, PluginSettingTab, Setting, TFile } from "obsidian";
+
+// synced settings -- stored in data.json and synced via obsidian sync
+interface Things3SyncSettings {
+  tag: string;
+}
+
+const DEFAULT_SETTINGS: Things3SyncSettings = {
+  tag: "obsidian",
+};
+
+// auth token lives in localStorage, not synced -- things 3 generates a unique
+// token per device in settings -> general -> enable things URLs
+const AUTH_TOKEN_STORAGE_KEY = "things3-sync-plugin-auth-token";
+
+interface TaskItem {
+  lineIndex: number;
+  indent: string;
+  text: string;
+}
+
+export default class Things3SyncPlugin extends Plugin {
+  settings: Things3SyncSettings;
+
+  async onload() {
+    await this.loadSettings();
+
+    this.addCommand({
+      id: "sync-tasks-to-things3",
+      name: "Sync open tasks to Things 3",
+      callback: () => this.syncTasksToThings(),
+    });
+
+    this.addSettingTab(new Things3SyncSettingTab(this.app, this));
+  }
+
+  onunload() {}
+
+  async loadSettings() {
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+  }
+
+  async saveSettings() {
+    await this.saveData(this.settings);
+  }
+
+  getAuthToken(): string {
+    return localStorage.getItem(AUTH_TOKEN_STORAGE_KEY) ?? "";
+  }
+
+  saveAuthToken(token: string): void {
+    localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
+  }
+
+  async syncTasksToThings(): Promise<void> {
+    const file = this.app.workspace.getActiveFile();
+    if (!file) {
+      new Notice("no active note open.");
+      return;
+    }
+
+    const authToken = this.getAuthToken();
+    if (!authToken) {
+      new Notice(
+        "things 3 auth token not set. add it in settings -> things 3 sync."
+      );
+      return;
+    }
+
+    let content: string;
+    try {
+      content = await this.app.vault.read(file);
+    } catch (e) {
+      new Notice("failed to read note content.");
+      console.error("[things3-sync] vault.read error:", e);
+      return;
+    }
+
+    const tasks = this.parseTasks(content);
+    if (tasks.length === 0) {
+      new Notice("no open tasks (- [ ]) found in current note.");
+      return;
+    }
+
+    const url = this.buildThingsUrl(tasks, file, authToken);
+
+    // open things first -- if the file write fails below the tasks are already
+    // in the inbox, which is the less-bad failure mode
+    window.open(url);
+
+    const updatedContent = this.applyMovedStatus(content, tasks);
+    try {
+      await this.app.vault.modify(file, updatedContent);
+    } catch (e) {
+      new Notice(
+        "tasks sent to things 3, but failed to update note. check console for details."
+      );
+      console.error("[things3-sync] vault.modify error:", e);
+      return;
+    }
+
+    new Notice(`sent ${tasks.length} task(s) to things 3 inbox.`);
+  }
+
+  // splits content by line and matches open tasks at any indent level.
+  // captures indent so the replacement preserves original indentation.
+  parseTasks(content: string): TaskItem[] {
+    const lines = content.split("\n");
+    const taskRegex = /^(\s*)- \[ \] (.+)$/;
+    const tasks: TaskItem[] = [];
+
+    lines.forEach((line, index) => {
+      const match = line.match(taskRegex);
+      if (match) {
+        tasks.push({ lineIndex: index, indent: match[1], text: match[2] });
+      }
+    });
+
+    return tasks;
+  }
+
+  // uses things:///json to send all tasks in a single URL call -- avoids the
+  // iOS restriction that blocks all but the first window.open() in a tight loop
+  buildThingsUrl(tasks: TaskItem[], file: TFile, authToken: string): string {
+    const obsidianLink = this.buildObsidianLink(file);
+    const today = new Date().toISOString().split("T")[0];
+    const notes = `source: ${obsidianLink}\nadded: ${today}`;
+
+    const todos = tasks.map((task) => ({
+      type: "to-do",
+      attributes: {
+        title: task.text,
+        notes: notes,
+        ...(this.settings.tag ? { tags: [this.settings.tag] } : {}),
+      },
+    }));
+
+    const encodedData = encodeURIComponent(JSON.stringify(todos));
+    const encodedToken = encodeURIComponent(authToken);
+    return `things:///json?data=${encodedData}&auth-token=${encodedToken}`;
+  }
+
+  buildObsidianLink(file: TFile): string {
+    const vault = encodeURIComponent(this.app.vault.getName());
+    const filePath = encodeURIComponent(file.path);
+    return `obsidian://open?vault=${vault}&file=${filePath}`;
+  }
+
+  // replaces - [ ] with - [M] for each matched task line, applied atomically
+  // so we only call vault.modify() once regardless of task count
+  applyMovedStatus(content: string, tasks: TaskItem[]): string {
+    const lines = content.split("\n");
+    for (const task of tasks) {
+      const line = lines[task.lineIndex];
+      if (/^(\s*)- \[ \] (.+)$/.test(line)) {
+        lines[task.lineIndex] = line.replace("- [ ]", "- [M]");
+      }
+    }
+    return lines.join("\n");
+  }
+}
+
+class Things3SyncSettingTab extends PluginSettingTab {
+  plugin: Things3SyncPlugin;
+
+  constructor(app: App, plugin: Things3SyncPlugin) {
+    super(app, plugin);
+    this.plugin = plugin;
+  }
+
+  display(): void {
+    const { containerEl } = this;
+    containerEl.empty();
+
+    containerEl.createEl("h2", { text: "things 3 sync settings" });
+
+    containerEl.createEl("h3", { text: "per-device settings (not synced)" });
+
+    new Setting(containerEl)
+      .setName("things 3 auth token")
+      .setDesc(
+        "your per-device things 3 auth token. generate it in things 3 -> " +
+          "settings -> general -> enable things URLs. stored locally on " +
+          "this device only -- not synced across devices."
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder("enter auth token")
+          .setValue(this.plugin.getAuthToken())
+          .onChange((value) => {
+            this.plugin.saveAuthToken(value.trim());
+          })
+      );
+
+    containerEl.createEl("h3", { text: "synced settings" });
+
+    new Setting(containerEl)
+      .setName("tag")
+      .setDesc(
+        "tag to apply to all todos created in things 3. the tag must already " +
+          "exist in things 3. leave empty to add no tag. this setting syncs " +
+          "across devices via obsidian sync."
+      )
+      .addText((text) =>
+        text
+          .setPlaceholder("obsidian")
+          .setValue(this.plugin.settings.tag)
+          .onChange(async (value) => {
+            this.plugin.settings.tag = value.trim();
+            await this.plugin.saveSettings();
+          })
+      );
+  }
+}
