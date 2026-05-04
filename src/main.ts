@@ -142,7 +142,9 @@ export default class Obs2ThingsPlugin extends Plugin {
     const today = new Date().toISOString().split("T")[0];
     const notes = `source: ${obsidianLink}\nadded: ${today}`;
 
-    const tags = this.settings.tags.filter((t) => t.length > 0);
+    const tags = this.settings.tags
+      .filter((t) => t.length > 0)
+      .map((t) => t.replace(/^#+/, ""));
     if (this.settings.addDateTag) {
       const fmt = this.settings.dateTagFormat.trim() || DEFAULT_SETTINGS.dateTagFormat;
       tags.push(window.moment().format(fmt));
@@ -223,8 +225,8 @@ class Obs2ThingsSettingTab extends PluginSettingTab {
       .setName("tags")
       .setDesc(
         "comma-separated list of tags to apply to all todos created in things 3. " +
-          "each tag must already exist in things 3. leave empty to add no tags. " +
-          "this setting syncs across devices via obsidian sync."
+          "leading # is stripped automatically. each tag must already exist in " +
+          "things 3. leave empty to add no tags. syncs across devices via obsidian sync."
       )
       .addText((text) =>
         text
