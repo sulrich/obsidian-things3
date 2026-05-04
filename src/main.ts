@@ -48,7 +48,12 @@ export default class Obs2ThingsPlugin extends Plugin {
   onunload() {}
 
   async loadSettings() {
-    this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData());
+    const saved = await this.loadData();
+    this.settings = Object.assign({}, DEFAULT_SETTINGS, saved);
+    // guard against a non-array tags value from a migration edge case
+    if (!Array.isArray(this.settings.tags)) {
+      this.settings.tags = DEFAULT_SETTINGS.tags;
+    }
   }
 
   async saveSettings() {
@@ -154,7 +159,10 @@ export default class Obs2ThingsPlugin extends Plugin {
 
     const encodedData = encodeURIComponent(JSON.stringify(todos));
     const encodedToken = encodeURIComponent(authToken);
-    return `things:///json?data=${encodedData}&auth-token=${encodedToken}`;
+    const url = `things:///json?data=${encodedData}&auth-token=${encodedToken}`;
+    console.log("[obs2things] tags:", tags);
+    console.log("[obs2things] url:", url);
+    return url;
   }
 
   buildObsidianLink(file: TFile): string {
