@@ -53,13 +53,4 @@ All settings except the auth token sync across devices via Obsidian Sync.
 | Setting | Default | Description |
 |---|---|---|
 | **Things 3 auth token** | — | Per-device auth token from Things 3 → Settings → General → Enable Things URLs. Not synced. |
-| **Tags** | `obsidian` | Comma-separated list of tags to apply to every created todo. Each tag must already exist in Things 3. Leave empty for no tags. |
-| **Add date tag** | off | When enabled, appends a tag with the current date to every todo. The tag must already exist in Things 3. |
-| **Date tag format** | `YYYY-MM-DD` | [Moment.js format string](https://momentjs.com/docs/#/displaying/format/) for the date tag. Only shown when **Add date tag** is on. Set this to match your daily note title format so the tag corresponds to an existing Things tag. |
-
-### Matching your daily note format
-
-If your Obsidian daily notes are titled with a format other than `YYYY-MM-DD`
-(e.g. `YYYYMMDD` or `ddd MMM D, YYYY`), set **Date tag format** to the same
-string. The plugin uses Obsidian's bundled moment.js instance, so the format
-syntax is identical.
+| **Tags** | `obsidian` | Comma-separated list of tags to apply to every created todo. Leading `#` is stripped automatically so Obsidian-style tags work as-is. **Tags must already exist in Things 3** — unknown tags are silently ignored. Leave empty for no tags. |
