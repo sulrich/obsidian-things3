@@ -1,23 +1,12 @@
 import { App, Notice, Plugin, PluginSettingTab, Setting, TFile } from "obsidian";
-import type * as Moment from "moment";
-
-declare global {
-  interface Window {
-    moment: typeof Moment;
-  }
-}
 
 // synced settings -- stored in data.json and synced via obsidian sync
 interface Obs2ThingsSettings {
   tags: string[];
-  addDateTag: boolean;
-  dateTagFormat: string;
 }
 
 const DEFAULT_SETTINGS: Obs2ThingsSettings = {
   tags: ["obsidian"],
-  addDateTag: false,
-  dateTagFormat: "YYYY-MM-DD",
 };
 
 // auth token lives in localStorage, not synced -- things 3 generates a unique
@@ -145,10 +134,6 @@ export default class Obs2ThingsPlugin extends Plugin {
     const tags = this.settings.tags
       .filter((t) => t.length > 0)
       .map((t) => t.replace(/^#+/, ""));
-    if (this.settings.addDateTag) {
-      const fmt = this.settings.dateTagFormat.trim() || DEFAULT_SETTINGS.dateTagFormat;
-      tags.push(window.moment().format(fmt));
-    }
 
     const todos = tasks.map((task) => ({
       type: "to-do",
@@ -161,10 +146,7 @@ export default class Obs2ThingsPlugin extends Plugin {
 
     const encodedData = encodeURIComponent(JSON.stringify(todos));
     const encodedToken = encodeURIComponent(authToken);
-    const url = `things:///json?data=${encodedData}&auth-token=${encodedToken}`;
-    console.log("[obs2things] tags:", tags);
-    console.log("[obs2things] url:", url);
-    return url;
+    return `things:///json?data=${encodedData}&auth-token=${encodedToken}`;
   }
 
   buildObsidianLink(file: TFile): string {
@@ -240,40 +222,5 @@ class Obs2ThingsSettingTab extends PluginSettingTab {
             await this.plugin.saveSettings();
           })
       );
-
-    new Setting(containerEl)
-      .setName("add date tag")
-      .setDesc(
-        "when enabled, a tag with the current date is added to each todo. " +
-          "the tag must already exist in things 3."
-      )
-      .addToggle((toggle) =>
-        toggle
-          .setValue(this.plugin.settings.addDateTag)
-          .onChange(async (value) => {
-            this.plugin.settings.addDateTag = value;
-            await this.plugin.saveSettings();
-            this.display();
-          })
-      );
-
-    if (this.plugin.settings.addDateTag) {
-      new Setting(containerEl)
-        .setName("date tag format")
-        .setDesc(
-          "moment.js format string for the date tag (e.g. YYYY-MM-DD, YYYYMMDD). " +
-            "use the same format as your obsidian daily note title so the tag " +
-            "matches existing notes."
-        )
-        .addText((text) =>
-          text
-            .setPlaceholder("YYYY-MM-DD")
-            .setValue(this.plugin.settings.dateTagFormat)
-            .onChange(async (value) => {
-              this.plugin.settings.dateTagFormat = value.trim();
-              await this.plugin.saveSettings();
-            })
-        );
-    }
   }
 }
