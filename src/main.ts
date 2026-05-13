@@ -93,24 +93,28 @@ export default class Obs2ThingsPlugin extends Plugin {
     // in the inbox, which is the less-bad failure mode
     window.open(url);
 
-    const updatedContent = this.applyMovedStatus(content, tasks);
+    // use vault.process for an atomic read-modify-write so we can't stomp on
+    // edits that arrived between our initial read and this write
     try {
-      await this.app.vault.modify(file, updatedContent);
+      await this.app.vault.process(file, (data) =>
+        this.applyMovedStatus(data, tasks)
+      );
     } catch (e) {
       new Notice(
         "tasks sent to things 3, but failed to update note. check console for details."
       );
-      console.error("[obs2things] vault.modify error:", e);
+      console.error("[obs2things] vault.process error:", e);
       return;
     }
 
     new Notice(`sent ${tasks.length} task(s) to things 3 inbox.`);
   }
 
-  // splits content by line and matches open tasks at any indent level.
-  // captures indent so the replacement preserves original indentation.
+  // splits content by line and matches only unchecked tasks (- [ ]) at any
+  // indent level. all other checkbox states (- [x], - [M], etc.) are ignored.
+  // normalizes CRLF so a trailing \r never leaks into task text or line indices.
   parseTasks(content: string): TaskItem[] {
-    const lines = content.split("\n");
+    const lines = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
     const taskRegex = /^(\s*)- \[ \] (.+)$/;
     const tasks: TaskItem[] = [];
 
@@ -155,10 +159,10 @@ export default class Obs2ThingsPlugin extends Plugin {
     return `obsidian://open?vault=${vault}&file=${filePath}`;
   }
 
-  // replaces - [ ] with - [M] for each matched task line, applied atomically
-  // so we only call vault.modify() once regardless of task count
+  // replaces - [ ] with - [M] for each matched task line. normalizes line
+  // endings for consistency with parseTasks so lineIndex values stay aligned.
   applyMovedStatus(content: string, tasks: TaskItem[]): string {
-    const lines = content.split("\n");
+    const lines = content.replace(/\r\n/g, "\n").replace(/\r/g, "\n").split("\n");
     for (const task of tasks) {
       const line = lines[task.lineIndex];
       if (/^(\s*)- \[ \] (.+)$/.test(line)) {
