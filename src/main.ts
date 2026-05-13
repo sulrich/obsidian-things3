@@ -13,7 +13,7 @@ const DEFAULT_SETTINGS: Obs2ThingsSettings = {
 // token per device in settings -> general -> enable things URLs
 const AUTH_TOKEN_STORAGE_KEY = "obs2things-plugin-auth-token";
 
-interface TaskItem {
+export interface TaskItem {
   lineIndex: number;
   indent: string;
   text: string;
